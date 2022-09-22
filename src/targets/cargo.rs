@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 22:03:29
 //  Last edited:
-//    20 Sep 2022, 22:55:00
+//    21 Sep 2022, 18:11:37
 //  Auto updated?
 //    Yes
 // 
@@ -12,10 +12,8 @@
 //!   Defines a target that builds something using Cargo.
 // 
 
-use std::rc::Rc;
-
 use crate::errors::BuildError;
-use crate::spec::Target;
+use crate::spec::{Dependency, Target};
 
 
 /***** LIBRARY *****/
@@ -24,7 +22,7 @@ pub struct CargoTarget {
     /// The name of the Target.
     name : String,
     /// The dependencies that must be built first before this Target is built.
-    deps : Vec<Rc<dyn Target>>,
+    deps : Vec<Dependency>,
 
     /// The name of the package that will be built.
     package : String,
@@ -41,7 +39,7 @@ impl CargoTarget {
     /// # Returns
     /// A new instance of a CargoTarget.
     #[inline]
-    pub fn new(name: impl Into<String>, package: impl Into<String>, deps: Vec<Rc<dyn Target>>) -> Self {
+    pub fn new(name: impl Into<String>, package: impl Into<String>, deps: Vec<Dependency>) -> Self {
         Self {
             name : name.into(),
             deps,
@@ -60,5 +58,5 @@ impl Target for CargoTarget {
 
     fn name(&self) -> &String { &self.name }
 
-    fn deps(&self) -> std::slice::Iter<Rc<dyn Target>> { self.deps.iter() }
+    fn deps(&self) -> std::slice::Iter<Dependency> { self.deps.iter() }
 }
