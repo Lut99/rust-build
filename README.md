@@ -38,6 +38,12 @@ With the installer compiled for their system, they can then run it according to 
 ```
 
 
+### API
+In general, the `rust-build` library uses the following approach to defining a build.
+
+The main approach of the library's API is to consider most build targets to be a transformation on files (very similar to how Makefile considers them). 
+
+
 ## Contributing
 If you want to contribute to this project, or have any questions or comments, feel free to drop an issue in the [issues](https://github.com/Lut99/rust-build/issues) page. Please tag your issue appropriately.
 
