@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 21:59:48
 //  Last edited:
-//    20 Sep 2022, 22:57:13
+//    12 Nov 2022, 14:04:07
 //  Auto updated?
 //    Yes
 // 
@@ -23,8 +23,9 @@
 // Declare modules
 pub mod errors;
 pub mod spec;
+pub mod cache;
+pub mod library;
 pub mod style;
-pub mod targets;
 pub mod installer;
 #[cfg(test)]
 pub mod tests;
@@ -33,3 +34,20 @@ pub mod tests;
 // Pull some things into the global namespace
 pub use errors::BuildError as Error;
 pub use installer::Installer;
+
+
+// Define some useful macros
+/// A feature-dependent `debug` macro.
+#[cfg(feature = "log")]
+macro_rules! debug {
+    ($($t:tt)*) => {
+        log::debug!($($t)*)
+    };
+}
+#[cfg(not(feature = "log"))]
+macro_rules! debug {
+    ($($t:tt)*) => {
+        // Do not use them
+    };
+}
+pub(crate) use debug;
