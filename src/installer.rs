@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 22:13:20
 //  Last edited:
-//    20 Sep 2022, 23:28:53
+//    13 Nov 2022, 14:46:58
 //  Auto updated?
 //    Yes
 // 
@@ -49,23 +49,23 @@ impl Installer {
 
 
 
-    /// Registers a new build target with the installer.
-    /// 
-    /// # Arguments
-    /// - `target`: The Target to register.
-    /// 
-    /// # Returns
-    /// Nothing, but does register it internally.
-    /// 
-    /// # Panics
-    /// This function may panic if the given Target had a conflicting name with other, already established targets.
-    #[inline]
-    pub fn register(&mut self, target: impl Target) {
-        // Sanity check the name's unique
-        if let Some(old) = self.targets.insert(target.name().clone(), Rc::new(target)) {
-            panic!("A Target with name '{}' is already registered", old.name());
-        }
-    }
+    // /// Registers a new build target with the installer.
+    // /// 
+    // /// # Arguments
+    // /// - `target`: The Target to register.
+    // /// 
+    // /// # Returns
+    // /// Nothing, but does register it internally.
+    // /// 
+    // /// # Panics
+    // /// This function may panic if the given Target had a conflicting name with other, already established targets.
+    // #[inline]
+    // pub fn register(&mut self, target: impl Target) {
+    //     // Sanity check the name's unique
+    //     if let Some(old) = self.targets.insert(target.name().clone(), Rc::new(target)) {
+    //         panic!("A Target with name '{}' is already registered", old.name());
+    //     }
+    // }
 }
 
 impl Default for Installer {

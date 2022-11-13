@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 21:59:48
 //  Last edited:
-//    12 Nov 2022, 14:04:07
+//    13 Nov 2022, 16:28:00
 //  Auto updated?
 //    Yes
 // 
@@ -23,6 +23,7 @@
 // Declare modules
 pub mod errors;
 pub mod spec;
+pub mod view;
 pub mod cache;
 pub mod library;
 pub mod style;
@@ -37,6 +38,21 @@ pub use installer::Installer;
 
 
 // Define some useful macros
+/// A feature-dependent `trace` macro.
+#[cfg(feature = "log")]
+macro_rules! trace {
+    ($($t:tt)*) => {
+        log::trace!($($t)*)
+    };
+}
+#[cfg(not(feature = "log"))]
+macro_rules! trace {
+    ($($t:tt)*) => {
+        // Do not use them
+    };
+}
+pub(crate) use trace;
+
 /// A feature-dependent `debug` macro.
 #[cfg(feature = "log")]
 macro_rules! debug {
@@ -51,3 +67,18 @@ macro_rules! debug {
     };
 }
 pub(crate) use debug;
+
+/// A feature-dependent `warn` macro.
+#[cfg(feature = "log")]
+macro_rules! warning {
+    ($($t:tt)*) => {
+        log::warn!($($t)*)
+    };
+}
+#[cfg(not(feature = "log"))]
+macro_rules! warning {
+    ($($t:tt)*) => {
+        // Do not use them
+    };
+}
+pub(crate) use warning as warn;

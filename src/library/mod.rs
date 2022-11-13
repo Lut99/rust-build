@@ -4,7 +4,7 @@
 //  Created:
 //    12 Nov 2022, 13:43:54
 //  Last edited:
-//    12 Nov 2022, 13:44:02
+//    13 Nov 2022, 14:36:20
 //  Auto updated?
 //    Yes
 // 
@@ -13,5 +13,8 @@
 //!   for typical installers.
 // 
 
-// Declare modules
+// Declare dependency/effect modules
 pub mod file;
+
+// Declare target modules
+pub mod cargo;
