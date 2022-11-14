@@ -4,7 +4,7 @@
 //  Created:
 //    12 Nov 2022, 13:47:41
 //  Last edited:
-//    13 Nov 2022, 14:47:21
+//    14 Nov 2022, 18:05:32
 //  Auto updated?
 //    Yes
 // 
@@ -330,10 +330,11 @@ impl Cache {
     /// # Arguments
     /// - `file`: The file to update the cache for. Note that its path acts as a unique identifier.
     /// - `info`: The CacheEntry with the info to update the file to.
+    /// - `dry_run`: If true, does not actually update the file physically but rather just prints it would.
     /// 
     /// # Errors
     /// This function errors if we failed to update the cache entry. This is typically due to IO errors.
-    pub fn update_file(&self, file: impl AsRef<Path>, info: impl AsRef<CacheEntry>) -> Result<(), Error> {
+    pub fn update_file(&self, file: impl AsRef<Path>, info: impl AsRef<CacheEntry>, dry_run: bool) -> Result<(), Error> {
         let file : &Path       = file.as_ref();
         let info : &CacheEntry = info.as_ref();
 
@@ -344,12 +345,17 @@ impl Cache {
 
         // Attempt to write the cache entry to that file
         let file_path: PathBuf = self.path.join(shash);
-        match File::create(&file_path) {
-            Ok(handle) => match serde_json::to_writer(handle, info) {
-                Ok(_)    => Ok(()),
-                Err(err) => Err(Error::CacheEntryWriteError{ path: file_path, err }),
-            },
-            Err(err) => Err(Error::CacheEntryCreateError{ path: file_path, err }),
+        if !dry_run {
+            match File::create(&file_path) {
+                Ok(handle) => match serde_json::to_writer(handle, info) {
+                    Ok(_)    => Ok(()),
+                    Err(err) => Err(Error::CacheEntryWriteError{ path: file_path, err }),
+                },
+                Err(err) => Err(Error::CacheEntryCreateError{ path: file_path, err }),
+            }
+        } else {
+            println!("[dry_run] File '{}' would be updated of change", file_path.display());
+            Ok(())
         }
     }
 }

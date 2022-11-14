@@ -4,7 +4,7 @@
 //  Created:
 //    12 Nov 2022, 13:44:39
 //  Last edited:
-//    13 Nov 2022, 16:31:48
+//    14 Nov 2022, 18:34:15
 //  Auto updated?
 //    Yes
 // 
@@ -16,9 +16,10 @@ use std::fmt::{Display, Formatter, Result as FResult};
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use rust_build::spec::{Effect, Named};
+use rust_build::cache::{Cache, CacheEntry, LastEditedTime};
+
 use crate::{trace, warn};
-use crate::spec::{Dependency, Effect, Named};
-use crate::cache::{Cache, CacheEntry, LastEditedTime};
 
 
 /***** ERRORS *****/
@@ -83,8 +84,8 @@ impl Named for File {
     fn name(&self) -> &str { &self.name }
 }
 
-impl Dependency for File {
-    fn has_changed(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+impl Effect for File {
+    fn has_changed(&self) -> Result<bool, Box<dyn std::error::Error>> {
         // Check if the file exists
         if !self.path.exists() { return Err(Box::new(Error::FileNotFound{ path: self.path.clone() })); }
 
@@ -92,7 +93,7 @@ impl Dependency for File {
         let entry: CacheEntry = match self.cache.get_file(&self.path) {
             Ok(Some(entry)) => entry,
             Ok(None)        => {
-                trace!("Marking '{}' as changed (no cache entry found)", self.path.display());
+                trace!("{}: Marking '{}' as changed (no cache entry found)", self.name(), self.path.display());
                 return Ok(true);
             },
             Err(err) => { return Err(Box::new(err)); },
@@ -107,22 +108,20 @@ impl Dependency for File {
         // Check if it's needed to recompile
         if entry.last_edited > last_edited {
             warn!("Last edited time in the cache is later than on disk; that seems weird (assuming recompilation is needed)");
-            trace!("Marking '{}' as changed (invalid cached time)", self.path.display());
+            trace!("{}: Marking '{}' as changed (invalid cached time)", self.name(), self.path.display());
             Ok(true)
         } else {
             #[cfg(feature = "log")]
             if entry.last_edited != last_edited {
-                trace!("Marking '{}' as unchanged (same last edited time as in cache)", self.path.display());
+                trace!("{}: Marking '{}' as unchanged (same last edited time as in cache)", self.name(), self.path.display());
             } else {
-                trace!("Marking '{}' as changed (last edited time later than in cache)", self.path.display());
+                trace!("{}: Marking '{}' as changed (last edited time later than in cache)", self.name(), self.path.display());
             }
             Ok(entry.last_edited != last_edited)
         }
     }
-}
 
-impl Effect for File {
-    fn commit_change(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn commit_change(&self, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
         // Check if the file exists
         if !self.path.exists() { return Err(Box::new(Error::FileNotFound{ path: self.path.clone() })); }
 
@@ -133,9 +132,10 @@ impl Effect for File {
         };
 
         // Write the last edited date to the cache
+        trace!("{}: Updating cache for file '{}'", self.name(), self.path.display());
         match self.cache.update_file(&self.path, CacheEntry {
             last_edited,
-        }) {
+        }, dry_run) {
             Ok(_)    => Ok(()),
             Err(err) => Err(Box::new(err)),
         }

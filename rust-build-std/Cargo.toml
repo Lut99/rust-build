@@ -1,0 +1,12 @@
+[package]
+name = "rust-build-std"
+version = "0.1.0"
+edition = "2021"
+authors = [ "Lut99" ]
+
+[dependencies]
+log   = { version = "0.4.17", optional = true }
+serde = { version = "1.0.147", features = ["derive"] }
+toml  = "0.5.9"
+
+rust-build = { path = "../rust-build" }

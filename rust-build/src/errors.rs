@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 22:00:31
 //  Last edited:
-//    13 Nov 2022, 14:57:53
+//    14 Nov 2022, 18:02:29
 //  Auto updated?
 //    Yes
 // 
@@ -41,15 +41,28 @@ impl Error for BuildError {}
 /// Defines errors that relate to the default functions fo the Target.
 #[derive(Debug)]
 pub enum TargetError {
+    /// Failed to build a dependency.
+    DependencyBuildError{ name: String, err: Box<Self> },
+    /// Failed to check if an effect has changed.
+    HasChangedError{ effect_name: String, err: Box<dyn Error> },
+
     /// Failed to build the target itself.
     BuildError{ name: String, err: Box<dyn Error> },
+
+    /// Failed to commit a resulting effect.
+    CommitError{ effect_name: String, err: Box<dyn Error> },
 }
 
 impl Display for TargetError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
         use TargetError::*;
         match self {
+            DependencyBuildError{ name, err }   => write!(f, "Failed to build dependency of target '{}': {}", name, err),
+            HasChangedError{ effect_name, err } => write!(f, "Failed to check if effect '{}' has changed: {}", effect_name, err),
+
             BuildError{ name, err } => write!(f, "Failed to build target '{}': {}", name, err),
+
+            CommitError{ effect_name, err } => write!(f, "Failed to commit changed of effect '{}': {}", effect_name, err),
         }
     }
 }
