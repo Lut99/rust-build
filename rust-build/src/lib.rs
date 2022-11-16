@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 21:59:48
 //  Last edited:
-//    14 Nov 2022, 18:34:45
+//    16 Nov 2022, 18:06:25
 //  Auto updated?
 //    Yes
 // 
@@ -33,7 +33,7 @@ pub mod tests;
 
 // Pull some things into the global namespace
 pub use errors::BuildError as Error;
-pub use installer::Installer;
+pub use installer::{Builder, Installer};
 
 
 // Define some useful macros

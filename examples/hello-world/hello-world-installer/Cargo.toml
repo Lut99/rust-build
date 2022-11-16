@@ -1,0 +1,12 @@
+[package]
+name = "hello-world-installer"
+version = "0.1.0"
+edition = "2021"
+authors = [ "Lut99" ]
+description = "Installer for the 'hello-world' app."
+
+[dependencies]
+clap = { version = "4.0.25", features = ["derive"] }
+
+rust-build     = { path = "../../../rust-build" }
+rust-build-std = { path = "../../../rust-build-std" }

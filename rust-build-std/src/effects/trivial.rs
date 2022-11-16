@@ -4,7 +4,7 @@
 //  Created:
 //    14 Nov 2022, 17:56:46
 //  Last edited:
-//    14 Nov 2022, 18:34:56
+//    16 Nov 2022, 17:49:02
 //  Auto updated?
 //    Yes
 // 
@@ -13,9 +13,9 @@
 //!   for driving builds.
 // 
 
-use log::trace;
-
 use rust_build::spec::{Effect, Named};
+
+use crate::trace;
 
 
 /***** LIBRARY *****/

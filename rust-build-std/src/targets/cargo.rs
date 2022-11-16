@@ -4,7 +4,7 @@
 //  Created:
 //    13 Nov 2022, 14:34:33
 //  Last edited:
-//    14 Nov 2022, 18:40:27
+//    16 Nov 2022, 18:19:20
 //  Auto updated?
 //    Yes
 // 
@@ -39,6 +39,9 @@ pub enum Error {
     CargoTomlReadError{ path: PathBuf, err: std::io::Error },
     /// Failed to parse a Cargo.toml file.
     CargoTomlParseError{ path: PathBuf, err: toml::de::Error },
+
+    /// The given Cargo.toml file did not have a table in its toplevel.
+    CargoTomlNotATable{ path: PathBuf },
 }
 
 impl Display for Error {
@@ -49,6 +52,8 @@ impl Display for Error {
             CargoTomlOpenError{ path, err }  => write!(f, "Failed to open Cargo.toml file '{}': {}", path.display(), err),
             CargoTomlReadError{ path, err }  => write!(f, "Failed to read Cargo.toml file '{}': {}", path.display(), err),
             CargoTomlParseError{ path, err } => write!(f, "Failed to parse Cargo.toml file '{}': {}", path.display(), err),
+
+            CargoTomlNotATable{ path } => write!(f, "'{}' does not have a toplevel table.", path.display()),
         }
     }
 }
@@ -148,27 +153,35 @@ impl<'a> CargoTarget<'a> {
         let path: &Path = path.as_ref();
 
         // Attempt to open the Cargo.toml file and read its contents
-        let cargo_toml: Vec<u8> = match File::open(path) {
+        let cargo_path: PathBuf = path.join("Cargo.toml");
+        let cargo_toml: Vec<u8> = match File::open(&cargo_path) {
             Ok(mut handle) => {
                 let mut res: Vec<u8> = vec![];
                 match handle.read_to_end(&mut res) {
                     Ok(_)    => res,
-                    Err(err) => { return Err(Error::CargoTomlReadError{ path: path.into(), err }); },
+                    Err(err) => { return Err(Error::CargoTomlReadError{ path: cargo_path, err }); },
                 }
             },
             Err(err) => {
                 if err.kind() != std::io::ErrorKind::NotFound { return Err(Error::MissingCargoToml { path: path.into() }); }
-                return Err(Error::CargoTomlOpenError{ path: path.into(), err });
+                return Err(Error::CargoTomlOpenError{ path: cargo_path, err });
             }
         };
 
         // Parse it with serde (and toml)
         let cargo_toml: Value = match toml::from_slice(&cargo_toml) {
             Ok(cargo_toml) => cargo_toml,
-            Err(err)       => { return Err(Error::CargoTomlParseError{ path: path.into(), err }); },
+            Err(err)       => { return Err(Error::CargoTomlParseError{ path: cargo_path, err }); },
         };
 
-        /* TODO */
+        // The file must be a toplevel table
+        if let Value::Table(table) = cargo_toml {
+            // If we find a workspace, assume that; otherwise, we get the parts of the package we are interested in
+            
+
+        } else {
+            return Err(Error::CargoTomlNotATable{ path: cargo_path });
+        }
 
         // Done
         Ok(vec![])
