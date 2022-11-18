@@ -6,7 +6,9 @@ authors = [ "Lut99" ]
 description = "Installer for the 'hello-world' app."
 
 [dependencies]
-clap = { version = "4.0.25", features = ["derive"] }
+clap      = { version = "4.0.25", features = ["derive"] }
+log       = "0.4.17"
+simplelog = "0.12.0"
 
-rust-build     = { path = "../../../rust-build" }
-rust-build-std = { path = "../../../rust-build-std" }
+rust-build     = { path = "../../../rust-build", features = ["log"] }
+rust-build-std = { path = "../../../rust-build-std", features = ["log"] }

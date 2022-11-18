@@ -4,7 +4,7 @@
 //  Created:
 //    16 Nov 2022, 17:57:19
 //  Last edited:
-//    16 Nov 2022, 18:15:11
+//    18 Nov 2022, 18:25:41
 //  Auto updated?
 //    Yes
 // 
@@ -14,6 +14,8 @@
 // 
 
 use clap::Parser;
+use log::{info, LevelFilter};
+use simplelog::{ColorChoice, TermLogger, TerminalMode};
 
 use rust_build::{Builder, Installer};
 use rust_build_std::targets::CargoTarget;
@@ -26,7 +28,9 @@ use rust_build_std::targets::CargoTarget;
 #[derive(Parser)]
 #[clap(author, about = "Installer for the 'hello-world' app.")]
 struct Arguments {
-    
+    /// Whether to show trace logs or not.
+    #[clap(short, long, help = "If given, shows additional 'trace' logs.")]
+    trace : bool,
 }
 
 
@@ -35,7 +39,12 @@ struct Arguments {
 
 /***** ENTRYPOINT *****/
 fn main() {
+    // Parse the arguments
+    let args: Arguments = Arguments::parse();
+
     // Setup a logger, just so you can see everything.
+    if let Err(err) = TermLogger::init(if args.trace { LevelFilter::Trace } else { LevelFilter::Debug }, Default::default(), TerminalMode::Mixed, ColorChoice::Auto) { eprintln!("WARNING: Failed to setup logger: {} (no logging for this session)", err); }
+    info!("Hello World Installer v{}", env!("CARGO_PKG_VERSION"));
 
     // Define an installer, or at least, the start of it.
     let mut builder: Builder = Installer::builder();

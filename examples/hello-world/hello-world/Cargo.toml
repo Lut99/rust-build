@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = [ "Lut99" ]
 description = "A test app to use for showing the simplest installer example."
+
+[[bin]]
+name = "helloworld"
+path = "src/main.rs"

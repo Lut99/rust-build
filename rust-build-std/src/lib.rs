@@ -4,7 +4,7 @@
 //  Created:
 //    14 Nov 2022, 18:32:47
 //  Last edited:
-//    14 Nov 2022, 18:34:49
+//    18 Nov 2022, 18:03:34
 //  Auto updated?
 //    Yes
 // 
@@ -34,6 +34,21 @@ macro_rules! trace {
     };
 }
 pub(crate) use trace;
+
+/// A feature-dependent `debug` macro.
+#[cfg(feature = "log")]
+macro_rules! debug {
+    ($($t:tt)*) => {
+        log::debug!($($t)*)
+    };
+}
+#[cfg(not(feature = "log"))]
+macro_rules! debug {
+    ($($t:tt)*) => {
+        // Do not use them
+    };
+}
+pub(crate) use debug;
 
 /// A feature-dependent `warn` macro.
 #[cfg(feature = "log")]
