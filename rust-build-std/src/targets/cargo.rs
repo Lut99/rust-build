@@ -4,7 +4,7 @@
 //  Created:
 //    13 Nov 2022, 14:34:33
 //  Last edited:
-//    18 Nov 2022, 18:53:33
+//    19 Nov 2022, 12:09:02
 //  Auto updated?
 //    Yes
 // 
@@ -16,17 +16,22 @@
 // 
 
 use std::fmt::{Display, Formatter, Result as FResult};
-use std::fs::File;
+use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use toml::Value;
 use toml::map::Map;
 
-use crate::{debug, trace};
 use rust_build::errors::TargetError;
-use rust_build::spec::{Effect, Named, Target};
+use rust_build::spec::{Architecture, Effect, Named, OperatingSystem, Target, TargetBuilder};
 use rust_build::view::EffectView;
+use rust_build::cache::Cache;
+
+use crate::{debug, trace};
+use crate::effects::File;
 
 
 /***** ERRORS *****/
@@ -54,15 +59,12 @@ pub enum Error {
     CargoTomlMissingName{ table: &'static str, path: PathBuf },
     /// The 'name' field in the Cargo.toml was of an incorrect type.
     CargoTomlNameTypeError{ what: &'static str, path: PathBuf, data_type: &'static str },
-
     /// The given Cargo.toml had a 'workspace' table, but not a nested 'members' table.
     CargoTomlMissingMembers{ path: PathBuf },
     /// The 'members' field in the Cargo.toml was of an incorrect type.
     CargoTomlMembersTypeError{ path: PathBuf, data_type: &'static str },
     /// The 'members' list in the Cargo.toml had a non-String element
     CargoTomlMemberTypeError{ path: PathBuf, data_type: &'static str },
-    /// The given Cargo.toml did not have a '[workspace]' _or_ a '[package]' field.
-    CargoTomlPackagesDeduceError{ path: PathBuf },
 }
 
 impl Display for Error {
@@ -75,16 +77,14 @@ impl Display for Error {
             CargoTomlParseError{ path, err } => write!(f, "Failed to parse Cargo.toml file '{}': {}", path.display(), err),
             CargoTomlNotATable{ path }       => write!(f, "{}: No toplevel table found", path.display()),
 
-            CargoTomlEffectsDeduceError{ path }             => write!(f, "{}: No '[[bin]]' or '[package]' toplevel table found", path.display()),
+            CargoTomlEffectsDeduceError{ path }             => write!(f, "{}: No '[[bin]]', '[package]' or '[workspace]' toplevel table found", path.display()),
             CargoTomlBinsTypeError{ path, data_type }       => write!(f, "{}: Expected an Array as '[[bin]]'s, but got {}", path.display(), data_type),
             CargoTomlBinTypeError{ path, data_type }        => write!(f, "{}: Expected only Tables in '[[bin]]'s, but got {}", path.display(), data_type),
             CargoTomlMissingName{ table, path }             => write!(f, "{}: There is a toplevel '{}' table, but not a nested 'name' field", table, path.display()),
             CargoTomlNameTypeError{ what, path, data_type } => write!(f, "{}: Expected a String as {} name, but got {}", what, path.display(), data_type),
-
-            CargoTomlMissingMembers{ path }              => write!(f, "{}: There is a toplevel '[workspace]' table, but not a nested 'members' list", path.display()),
-            CargoTomlMembersTypeError{ path, data_type } => write!(f, "{}: Expected an Array as workspace members, but got {}", path.display(), data_type),
-            CargoTomlMemberTypeError{ path, data_type }  => write!(f, "{}: Expected only Strings in workspace members, but got {}", path.display(), data_type),
-            CargoTomlPackagesDeduceError{ path }         => write!(f, "{}: No '[package]' or '[workspace]' toplevel table found", path.display()),
+            CargoTomlMissingMembers{ path }                 => write!(f, "{}: There is a toplevel '[workspace]' table, but not a nested 'members' list", path.display()),
+            CargoTomlMembersTypeError{ path, data_type }    => write!(f, "{}: Expected an Array as workspace members, but got {}", path.display(), data_type),
+            CargoTomlMemberTypeError{ path, data_type }     => write!(f, "{}: Expected only Strings in workspace members, but got {}", path.display(), data_type),
         }
     }
 }
@@ -108,7 +108,7 @@ pub enum CargoMode {
 impl CargoMode {
     /// Converts the CargoMode to a flag.
     #[inline]
-    fn to_flag(&self) -> &str {
+    pub fn to_flag(&self) -> &str {
         use CargoMode::*;
         match self {
             Release => " --release",
@@ -118,17 +118,179 @@ impl CargoMode {
 
     /// Converts the CargoMode to the relevant build folder.
     #[inline]
-    fn to_build_dir(&self) -> &str {
+    pub fn to_build_dir(&self) -> &str {
         use CargoMode::*;
         match self {
-            Releaes => "release",
+            Release => "release",
             Debug   => "debug",
+        }
+    }
+}
+
+
+
+/// Defines the builder for the `CargoTarget`.
+/// 
+/// Note that you have to call at least `CargoTargetBuilder::path()` before calling `CargoTargetBuilder::build()`.
+/// 
+/// Also note that if you do not specify any effects, they will automatically be deduced from the `Cargo.toml` file(s) sa all binaries they produce.
+pub struct CargoTargetBuilder<'a> {
+    /// The name of this target.
+    name    : String,
+    /// The dependencies of this target.
+    deps    : Vec<EffectView<'a>>,
+    /// The effects (that we care about) of this target.
+    effects : Option<Vec<Box<dyn Effect>>>,
+
+    /// The path of the directory where the target package (or workspace) lives.
+    path     : Option<PathBuf>,
+    /// The packages that we build in this run.
+    packages : Vec<String>,
+    /// The build mode (i.e., release or debug) we are in.
+    mode     : CargoMode,
+}
+
+impl<'a> TargetBuilder<'a> for CargoTargetBuilder<'a> {
+    type Target = CargoTarget<'a>;
+
+
+    #[inline]
+    fn new(name: impl Into<String>) -> Self {
+        Self {
+            name    : name.into(),
+            deps    : vec![],
+            effects : None,
+
+            path     : None,
+            packages : vec![],
+            mode     : CargoMode::Release,
         }
     }
 
 
 
-    /* TODO: Default enum functions */
+    #[inline]
+    fn dep(mut self, dep: EffectView<'a>) -> Self {
+        self.deps.push(dep);
+        self
+    }
+    #[inline]
+    fn deps(mut self, deps: impl IntoIterator<Item = EffectView<'a>, IntoIter = impl Iterator<Item = EffectView<'a>>>) -> Self {
+        // Collect them in a separate vector first
+        let mut new_deps: Vec<EffectView> = deps.into_iter().collect();
+        self.deps.append(&mut new_deps);
+        self
+    }
+
+    fn effect(mut self, effect: impl 'static + Effect) -> Self {
+        // Either set or add
+        if let Some(effects) = &mut self.effects {
+            effects.push(Box::new(effect));
+        } else {
+            self.effects = Some(vec![ Box::new(effect) ]);
+        }
+        self
+    }
+    fn effects(mut self, effects: impl IntoIterator<Item = impl 'static + Effect, IntoIter = impl Iterator<Item = impl 'static + Effect>>) -> Self {
+        // Collect them in a separate vector first
+        let mut new_effects: Vec<Box<dyn Effect>> = effects.into_iter().map(|e| Box::new(e) as Box<dyn Effect>).collect();
+
+        // Either set or add
+        if let Some(effects) = &mut self.effects {
+            effects.append(&mut new_effects);
+        } else {
+            self.effects = Some(new_effects);
+        }
+        self
+    }
+
+
+
+    fn build(self, cache: Rc<Cache>) -> Result<Self::Target, Box<dyn std::error::Error>> {
+        // Assert we have what we need and/or default
+        let path: PathBuf = match self.path {
+            Some(path) => path,
+            None       => { panic!("You have to call `CargoTargetBuilder::path()` before callign `CargoTargetBuilder::build()`"); },
+        };
+        let effects: Vec<Box<dyn Effect>> = match self.effects {
+            Some(effects) => effects,
+            None          => { CargoTarget::deduce_effects(&self.name, &path, self.mode, cache).map_err(|err| Box::new(err))? },
+        };
+
+        // Simply create a target with those properties
+        Ok(CargoTarget {
+            name : self.name,
+            deps : self.deps,
+            effects,
+
+            path,
+            packages : self.packages,
+            mode     : self.mode,
+        })
+    }
+}
+
+impl<'a> CargoTargetBuilder<'a> {
+    /// Sets the path of the directory that this CargoTargetBuilder operates in.
+    /// 
+    /// This function is mandatory to set before calling `CargoTargetBuilder::build()`.
+    /// 
+    /// # Arguments
+    /// - `path`: The path to the package or workspace directory that this target concerns itself with.
+    /// 
+    /// # Returns
+    /// The same `self` as given for chaining purposes.
+    #[inline]
+    pub fn path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+
+    /// Adds a package to the list of packages that this target will build.
+    /// 
+    /// If you specify no packages at all (i.e., never call `CargoTargetBuilder::package()` and `CargoTargetBuilder::packages()`), then all packages in a directory will be built (akin to not specifying any packages when calling `cargo build`).
+    /// 
+    /// # Arguments
+    /// - `package`: The name/identifier of the package to build.
+    /// 
+    /// # Returns
+    /// The same `self` as given for chaining purposes.
+    #[inline]
+    pub fn package(mut self, package: impl Into<String>) -> Self {
+        self.packages.push(package.into());
+        self
+    }
+    /// Adds a whole list of packages to the list of packages that this target will build.
+    /// 
+    /// If you specify no packages at all (i.e., never call `CargoTargetBuilder::package()` and `CargoTargetBuilder::packages()`), then all packages in a directory will be built (akin to not specifying any packages when calling `cargo build`).
+    /// 
+    /// # Arguments
+    /// - `packages`: An iterator over the names/identifiers of the packages to build.
+    /// 
+    /// # Returns
+    /// The same `self` as given for chaining purposes.
+    #[inline]
+    pub fn packages(mut self, packages: impl IntoIterator<Item = impl Into<String>, IntoIter = impl Iterator<Item = impl Into<String>>>) -> Self {
+        // Collect them in a separate vector first
+        let mut new_packages: Vec<String> = packages.into_iter().map(|p| p.into()).collect();
+        self.packages.append(&mut new_packages);
+        self
+    }
+
+    /// Sets the building mode for this target.
+    /// 
+    /// Defaults to `CargoMode::Release`.
+    /// 
+    /// # Arguments
+    /// - `mode`: The mode in which to build the packages.
+    /// 
+    /// # Returns
+    /// The same `self` as given for chaining purposes.
+    #[inline]
+    pub fn mode(mut self, mode: CargoMode) -> Self {
+        self.mode = mode;
+        self
+    }
 }
 
 
@@ -153,38 +315,20 @@ pub struct CargoTarget<'a> {
 }
 
 impl<'a> CargoTarget<'a> {
-    /// Constructor for the CargoTarget.
+    /// Returns a builder for the CargoTarget that can be used to fully define it.
     /// 
-    /// Note that the source files and effects of this target will actually be deduced based on the `Cargo.toml` file we assume to be present in the given folder.
+    /// Note that you have to call at least `CargoTargetBuilder::path()` before calling `CargoTargetBuilder::build()`.
+    /// 
+    /// Also note that if you do not specify any effects, they will automatically be deduced from the `Cargo.toml` file(s) sa all binaries they produce.
     /// 
     /// # Arguments
-    /// - `name`: The name/identifier of this target.
-    /// - `path`: The path to the directory with the package (or workspace).
-    /// - `mode`: Whether to build as release (i.e., with the `--release` flag) or as dev (i.e., without the `--release` flag).
+    /// - `name`: The name of the target to build.
     /// 
     /// # Returns
-    /// A new CargoTarget instance.
-    /// 
-    /// # Errors
-    /// This function errors if we failed to deduce packages or effects from the given folder.
-    pub fn new(name: impl Into<String>, path: impl Into<PathBuf>, mode: CargoMode) -> Result<Self, Error> {
-        let name: String  = name.into();
-        let path: PathBuf = path.into();
-
-        // Deduce the things
-        let effects  : Vec<Box<dyn Effect>> = Self::deduce_effects(&name, &path)?;
-        let packages : Vec<String>          = Self::deduce_packages(&name, &path)?;
-
-        // Return the new Target
-        Ok(Self {
-            name,
-            deps : vec![],
-            effects,
-
-            path,
-            packages,
-            mode,
-        })
+    /// A new CargoTargetBuilder instance.
+    #[inline]
+    pub fn builder(name: impl Into<String>) -> CargoTargetBuilder<'a> {
+        CargoTargetBuilder::new(name)
     }
 
 
@@ -198,20 +342,22 @@ impl<'a> CargoTarget<'a> {
     /// # Arguments
     /// - `name`: The name of the target-to-be (used for debugging purposes only).
     /// - `path`: The path to the directory with the package (or workspace).
+    /// - `mode`: Whether we're building in `CargoMode::Release` or `CargoMode::Debug` mode.
+    /// - `cache`: The Cache that we use to keep track of file changed.
     /// 
     /// # Returns
     /// A vector of effects, each of which is the (relevant) output file(s) of a package.
     /// 
     /// # Errors
     /// This function errors if we failed to find, read or parse the `Cargo.toml` file.
-    pub fn deduce_effects(name: impl AsRef<str>, path: impl AsRef<Path>) -> Result<Vec<Box<dyn Effect>>, Error> {
+    pub fn deduce_effects(name: impl AsRef<str>, path: impl AsRef<Path>, mode: CargoMode, cache: Rc<Cache>) -> Result<Vec<Box<dyn Effect>>, Error> {
         let name : &str  = name.as_ref();
         let path : &Path = path.as_ref();
         trace!("Duducing effects for CargoTarget '{}' in directory '{}'", name, path.display());
 
         // Attempt to open the Cargo.toml file and read its contents
         let cargo_path: PathBuf = path.join("Cargo.toml");
-        let cargo_toml: Vec<u8> = match File::open(&cargo_path) {
+        let cargo_toml: Vec<u8> = match fs::File::open(&cargo_path) {
             Ok(mut handle) => {
                 let mut res: Vec<u8> = vec![];
                 match handle.read_to_end(&mut res) {
@@ -232,7 +378,7 @@ impl<'a> CargoTarget<'a> {
         };
 
         // The file must be a toplevel table
-        debug!("Extracting packages from '{}'...", cargo_path.display());
+        debug!("Extracting effects from '{}'...", cargo_path.display());
         if let Value::Table(table) = cargo_toml {
             // If there is a toplevel '[[bin]]', we can deduce the name; otherwise, assume the name
             let names: Vec<String> = if let Some(bins) = table.get("bin") {
@@ -269,104 +415,51 @@ impl<'a> CargoTarget<'a> {
                 }
 
             } else {
-                return Err(Error::CargoTomlEffectsDeduceError { path: cargo_path });
+                vec![]
             };
 
-            // Cast the names to paths
-            let paths: Vec<PathBuf> = names.into_iter().map(|n| n.)
+            // Cast the names to paths, then to (File) effects
+            let mut res: Vec<Box<dyn Effect>> = names.into_iter().map(|n| {
+                // First, create a path from that
+                let path: PathBuf = PathBuf::from("./target").join(mode.to_build_dir()).join(&n);
 
+                // Next, wrap it in a FileEffect
+                Box::new(File::new(format!("{}_{}", name, n), cache.clone(), path)) as Box<dyn Effect>
+            }).collect();
 
-            println!("{:?}", names);
-            Ok(vec![])
-        } else {
-            Err(Error::CargoTomlNotATable{ path: cargo_path })
-        }
-    }
-
-    /// Deduces the list of packages from either the given package or workspace directory by inspecting the Cargo.toml.
-    /// 
-    /// If the path points to a package, the name of the package is returned as only package.
-    /// 
-    /// Otherwise, the list of members is returned.
-    /// 
-    /// # Arguments
-    /// - `name`: The name of the target-to-be (used for debugging purposes only).
-    /// - `path`: The path to the directory with the package (or workspace).
-    /// 
-    /// # Returns
-    /// A vector of strings, each of which is the name of a package in this directory.
-    /// 
-    /// # Errors
-    /// This function errors if we failed to find, read or parse the `Cargo.toml` file.
-    pub fn deduce_packages(name: impl AsRef<str>, path: impl AsRef<Path>) -> Result<Vec<String>, Error> {
-        let name : &str  = name.as_ref();
-        let path : &Path = path.as_ref();
-        trace!("Duducing packages for CargoTarget '{}' in directory '{}'", name, path.display());
-
-        // Attempt to open the Cargo.toml file and read its contents
-        let cargo_path: PathBuf = path.join("Cargo.toml");
-        let cargo_toml: Vec<u8> = match File::open(&cargo_path) {
-            Ok(mut handle) => {
-                let mut res: Vec<u8> = vec![];
-                match handle.read_to_end(&mut res) {
-                    Ok(_)    => res,
-                    Err(err) => { return Err(Error::CargoTomlReadError{ path: cargo_path, err }); },
-                }
-            },
-            Err(err) => {
-                if err.kind() != std::io::ErrorKind::NotFound { return Err(Error::MissingCargoToml { path: path.into() }); }
-                return Err(Error::CargoTomlOpenError{ path: cargo_path, err });
-            }
-        };
-
-        // Parse it with serde (and toml)
-        let cargo_toml: Value = match toml::from_slice(&cargo_toml) {
-            Ok(cargo_toml) => cargo_toml,
-            Err(err)       => { return Err(Error::CargoTomlParseError{ path: cargo_path, err }); },
-        };
-
-        // The file must be a toplevel table
-        debug!("Extracting packages from '{}'...", cargo_path.display());
-        if let Value::Table(table) = cargo_toml {
-            // Extract either the package itself, the nested packages or both
-            let mut res: Vec<String> = vec![];
+            // Recurse into any workspace files to handle those
             if let Some(workspace) = table.get("workspace") {
                 // Get the list
                 let members: &[Value] = match workspace.get("members") {
                     Some(Value::Array(members)) => members,
-                    Some(members)               => { return Err(Error::CargoTomlMembersTypeError { path: cargo_path, data_type: members.type_str() }); },
+                    Some(members)               => { return Err(Error::CargoTomlMembersTypeError{ path: cargo_path, data_type: members.type_str() }); },
                     None                        => { return Err(Error::CargoTomlMissingMembers{ path: cargo_path }); },
                 };
 
-                // Unwrap the list
-                res.reserve(members.len());
+                // Unwrap the list to strings
+                let mut smembers: Vec<&String> = Vec::with_capacity(members.len());
                 for m in members {
-                    res.push(if let Value::String(member) = m {
-                        member.clone()
+                    smembers.push(if let Value::String(member) = m {
+                        member
                     } else {
                         return Err(Error::CargoTomlMemberTypeError{ path: cargo_path, data_type: m.type_str() });
                     });
                 }
 
-            }
-            if let Some(package) = table.get("package") {
-                // Attempt to find the 'name' field
-                res.push(match package.get("name") {
-                    Some(Value::String(name)) => name.clone(),
-                    Some(name)                => { return Err(Error::CargoTomlNameTypeError{ what: "package", path: cargo_path, data_type: name.type_str() }); },
-                    None                      => { return Err(Error::CargoTomlMissingName{ table: "package", path: cargo_path }); },
-                });
-
+                // We can now recurse each of the members to find their package names
+                for m in smembers {
+                    res.append(&mut Self::deduce_effects(name, path.join(m), mode, cache.clone())?);
+                }
             }
 
-            // Return any if we found any
-            if !res.is_empty() {
-                debug!("Packages deduced from '{}': {:?}", cargo_path.display(), res);
-                Ok(res)
-            } else { 
-                Err(Error::CargoTomlPackagesDeduceError{ path: cargo_path })
-            }
+            // If the names are still empty, we failed
+            if res.is_empty() {
+                return Err(Error::CargoTomlEffectsDeduceError { path: cargo_path });
+            };
 
+            // Return that
+            debug!("Effects deduced from '{}': {:?}", cargo_path.display(), res.iter().map(|e| e.name()).collect::<Vec<&str>>());
+            Ok(res)
         } else {
             Err(Error::CargoTomlNotATable{ path: cargo_path })
         }
@@ -381,6 +474,10 @@ impl<'a> CargoTarget<'a> {
     /// Returns the list of packages we're building.
     #[inline]
     pub fn packages(&self) -> &[String] { &self.packages }
+
+    /// Returns the mode in which we're building.
+    #[inline]
+    pub fn mode(&self) -> CargoMode { self.mode }
 }
 
 impl<'a> Named for CargoTarget<'a> {
@@ -388,8 +485,30 @@ impl<'a> Named for CargoTarget<'a> {
     fn name(&self) -> &str { &self.name }
 }
 impl<'a> Target for CargoTarget<'a> {
-    fn build(&self, dry_run: bool) -> Result<(), TargetError> {
-        /* TODO */
+    fn build(&self, os: OperatingSystem, arch: Architecture, dry_run: bool) -> Result<(), TargetError> {
+        // Cast architectures to a suitable string
+        let arch: &str = match arch {
+            Architecture::x86_32       => "i686",
+            Architecture::x86_64       => "x86_64",
+            Architecture::Aarch32      => "arm",
+            Architecture::Aarch64      => "aarch64",
+            Architecture::PowerPc32    => "powerpc",
+            Architecture::PowerPc64    => "powerpc64",
+            Architecture::Mips         => "mips",
+            Architecture::Custom(arch) => { panic!("Custom architectures ('{}') are not supported by CargoTarget", arch); },
+        };
+
+        // Use that to prepare the cargo target string
+        let target: String = match os {
+            OperatingSystem::Windows      => { format!("{}-pc-windows-msvc", arch) },
+            OperatingSystem::MacOs        => { format!("{}-apple-darwin", arch) },
+            OperatingSystem::Linux        => { format!("{}-unknown-linux-gnu", arch) },
+            OperatingSystem::Custom(arch) => { panic!("Custom operating systems ('{}') are not supported by CargoTarget", arch); },
+        };
+
+        // Now prepare the command to run
+        
+
         Ok(())
     }
 

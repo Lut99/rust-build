@@ -4,7 +4,7 @@
 //  Created:
 //    14 Nov 2022, 17:58:22
 //  Last edited:
-//    14 Nov 2022, 17:58:41
+//    19 Nov 2022, 10:31:29
 //  Auto updated?
 //    Yes
 // 
@@ -17,4 +17,4 @@
 pub mod cargo;
 
 // Pull stuff into this namespace
-pub use cargo::CargoTarget;
+pub use cargo::{CargoTarget, CargoTargetBuilder};

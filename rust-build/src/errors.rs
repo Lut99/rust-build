@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 22:00:31
 //  Last edited:
-//    14 Nov 2022, 18:02:29
+//    19 Nov 2022, 12:30:06
 //  Auto updated?
 //    Yes
 // 
@@ -113,6 +113,26 @@ impl Display for CacheError {
 }
 
 impl Error for CacheError {}
+
+
+
+/// Defines errors that relate to shell interaction.
+#[derive(Debug)]
+pub enum ShellError {
+    
+}
+
+impl Display for ShellError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FResult {
+        use ShellError::*;
+        match self {
+            
+        }
+    }
+}
+
+impl Error for ShellError {}
+
 
 
 

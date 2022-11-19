@@ -4,7 +4,7 @@
 //  Created:
 //    20 Sep 2022, 21:59:48
 //  Last edited:
-//    16 Nov 2022, 18:06:25
+//    19 Nov 2022, 12:09:15
 //  Auto updated?
 //    Yes
 // 
@@ -25,6 +25,7 @@ pub mod errors;
 pub mod spec;
 pub mod view;
 pub mod cache;
+pub mod shell;
 pub mod style;
 pub mod installer;
 #[cfg(test)]
@@ -33,6 +34,8 @@ pub mod tests;
 
 // Pull some things into the global namespace
 pub use errors::BuildError as Error;
+pub use spec::{Effect, Named, Target, TargetBuilder};
+pub use cache::Cache;
 pub use installer::{Builder, Installer};
 
 
